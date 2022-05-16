@@ -645,8 +645,12 @@ void handleApdu(unsigned int *flags, unsigned int *tx) {
                     }
                     else
                     {
+#ifdef HAVE_EIP712_FULL_SUPPORT
                         *flags |= IO_ASYNCH_REPLY;
                         handle_eip712_sign(G_io_apdu_buffer);
+#else
+                        THROW(0x6B00);
+#endif // HAVE_EIP712_FULL_SUPPORT
                     }
                     break;
 
@@ -673,6 +677,7 @@ void handleApdu(unsigned int *flags, unsigned int *tx) {
 
 #endif
 
+#ifdef HAVE_EIP712_FULL_SUPPORT
                 case INS_EIP712_STRUCT_DEF:
                     *flags |= IO_ASYNCH_REPLY;
                     handle_eip712_struct_def(G_io_apdu_buffer);
@@ -682,6 +687,7 @@ void handleApdu(unsigned int *flags, unsigned int *tx) {
                     *flags |= IO_ASYNCH_REPLY;
                     handle_eip712_struct_impl(G_io_apdu_buffer);
                     break;
+#endif // HAVE_EIP712_FULL_SUPPORT
 
 #if 0
         case 0xFF: // return to dashboard
