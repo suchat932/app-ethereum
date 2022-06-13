@@ -54,7 +54,6 @@ bool    eip712_context_init(void)
 
     // create len(types)
     *(eip712_context->structs_array) = 0;
-
     return true;
 }
 
