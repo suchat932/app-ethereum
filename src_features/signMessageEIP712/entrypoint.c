@@ -408,37 +408,51 @@ bool    handle_eip712_struct_def(const uint8_t *const apdu_buf)
 
 bool    handle_eip712_struct_impl(const uint8_t *const apdu_buf)
 {
-    bool ret = true;
+    uint32_t ret = 0; // indicates no error, response APDU will come later with user action
 
     switch (apdu_buf[OFFSET_P2])
     {
         case P2_NAME:
             // set root type
-            ret = path_set_root((char*)&apdu_buf[OFFSET_CDATA],
-                                apdu_buf[OFFSET_LC]);
+            if (path_set_root((char*)&apdu_buf[OFFSET_CDATA],
+                              apdu_buf[OFFSET_LC]))
+            {
+                ret = 0x9000;
+                ui_712_field_flags_reset();
+            }
+            else
+            {
+                ret = 0x6a80;
+            }
             break;
         case P2_FIELD:
-            ret = field_hash(&apdu_buf[OFFSET_CDATA],
-                             apdu_buf[OFFSET_LC],
-                             apdu_buf[OFFSET_P1] != P1_COMPLETE);
+            if (!field_hash(&apdu_buf[OFFSET_CDATA],
+                            apdu_buf[OFFSET_LC],
+                            apdu_buf[OFFSET_P1] != P1_COMPLETE))
+            {
+                ret = 0x6a80;
+            }
             break;
         case P2_ARRAY:
-            ret = path_new_array_depth(apdu_buf[OFFSET_CDATA]);
+            if (!path_new_array_depth(apdu_buf[OFFSET_CDATA]))
+            {
+                ret = 0x6a80;
+            }
             break;
         default:
             PRINTF("Unknown P2 0x%x for APDU 0x%x\n",
                    apdu_buf[OFFSET_P2],
                    apdu_buf[OFFSET_INS]);
-            ret = false;
+            ret = 0x6a80;
     }
-    if (!ret)
+    if (ret != 0)
     {
         // Send back the response, do not restart the event loop
-        G_io_apdu_buffer[0] = 0x6A;
-        G_io_apdu_buffer[1] = 0x80;
+        G_io_apdu_buffer[0] = (ret & 0xff00) >> 8;
+        G_io_apdu_buffer[1] = ret & 0x00ff;
         io_exchange(CHANNEL_APDU | IO_RETURN_AFTER_TX, 2);
     }
-    return ret;
+    return (ret == 0) || (ret == 0x9000);
 }
 
 static bool verify_contract_name_signature(uint8_t dname_length,
@@ -665,10 +679,10 @@ bool    handle_eip712_filtering(const uint8_t *const apdu_buf)
     switch (apdu_buf[OFFSET_P1])
     {
         case P1_ACTIVATE:
-            ui_ctx->filtering_mode = EIP712_FILTERING_FULL;
+            ui_712_set_filtering_mode(EIP712_FILTERING_FULL);
             break;
         case P1_CONTRACT_NAME:
-            if (ui_ctx->filtering_mode == EIP712_FILTERING_FULL)
+            if (ui_712_get_filtering_mode() == EIP712_FILTERING_FULL)
             {
                 ret = provide_contract_name(&apdu_buf[OFFSET_CDATA],
                                             apdu_buf[OFFSET_LC]);
@@ -679,7 +693,7 @@ bool    handle_eip712_filtering(const uint8_t *const apdu_buf)
             }
             break;
         case P1_FIELD_NAME:
-            if (ui_ctx->filtering_mode == EIP712_FILTERING_FULL)
+            if (ui_712_get_filtering_mode() == EIP712_FILTERING_FULL)
             {
                 ret = provide_field_name(&apdu_buf[OFFSET_CDATA],
                                          apdu_buf[OFFSET_LC]);
@@ -720,9 +734,10 @@ bool    handle_eip712_sign(const uint8_t *const apdu_buf)
     {
         return false;
     }
-#ifdef HAVE_EIP712_HALF_BLIND
-    ui_712_message_hash();
-#endif // HAVE_EIP712_HALF_BLIND
+    if (ui_712_get_filtering_mode() == EIP712_FILTERING_BASIC)
+    {
+        ui_712_message_hash();
+    }
     ui_712_end_sign();
     return true;
 }
